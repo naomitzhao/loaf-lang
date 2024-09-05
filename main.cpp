@@ -13,10 +13,10 @@
 #include <optional>
 
 enum TokenType {
-    _exit,
     _int_literal,
     _string_literal,
     _newline,
+    _print,
 };
 
 class Token {
@@ -50,6 +50,9 @@ std::string getFileContent(std::string fileName) {
     buffer << file.rdbuf();
 
     std::string fileContent = buffer.str();
+    if (fileContent[fileContent.size() - 1] != '\n') {
+        fileContent += '\n';
+    }
 
     file.close();  // close the file
     return fileContent;
@@ -62,7 +65,7 @@ std::vector<Line> getLines(std::string fileName) {
     std::string fileContent = getFileContent(fileName);
     std::string stringBuffer;
     int currLine = 1;
-    int i = 0;
+    unsigned int i = 0;
 
     // iterate over all characters in file content
     while (i < fileContent.length()) {
@@ -76,8 +79,8 @@ std::vector<Line> getLines(std::string fileName) {
                 stringBuffer.push_back(fileContent.at(i));
                 i ++;
             }
-            if (stringBuffer == "exit") {
-                tokenBuffer.push_back(Token(TokenType::_exit));
+            if (stringBuffer == "print") {
+                tokenBuffer.push_back(Token(TokenType::_print));
             } else {
                 std::cerr << "unrecognized symbol " << "\"" << stringBuffer << "\"" << " on line " << currLine << std::endl;
                 exit(EXIT_FAILURE);
@@ -126,7 +129,6 @@ std::vector<Line> getLines(std::string fileName) {
                     exit(EXIT_FAILURE);
             }
             i ++;
-            std::cout << i << std::endl;
         }
     }
 
@@ -138,24 +140,41 @@ std::vector<Line> getLines(std::string fileName) {
     return lines;
 }
 
-std::string lines_to_asm(const std::vector<Line> lines) {
-    std::stringstream output;
-    output << "global _start\n_start:\n";
+// TODO: add line count to line objects so errors display accurately
 
-    for (int lineIdx = 0; lineIdx < lines.size(); lineIdx ++) {
+std::string lines_to_asm(const std::vector<Line> lines) {
+    int dataId = 0;
+    std::stringstream textSection;
+    std::stringstream dataSection;
+    textSection << "global _start\n\nsection .text\n\n_start:\n";
+    dataSection << "section .data\n";
+
+    for (unsigned int lineIdx = 0; lineIdx < lines.size(); lineIdx ++) {
         const std::vector<Token> tokenList = lines[lineIdx].tokenList;
-        if (tokenList[0].type == TokenType::_exit) {
-            if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || tokenList[1].type != TokenType::_int_literal) {
-                std::cerr << "invalid syntax, correct syntax: exit <exit value>;" << std::endl;
+        if (tokenList[0].type == TokenType::_print) {
+            if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || (tokenList[1].type != TokenType::_string_literal && tokenList[1].type != TokenType::_int_literal)) {
+                std::cerr << "invalid syntax on line" << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
                 exit(EXIT_FAILURE);
             }
-            output << "    mov rax, 60\n";
-            output << "    mov rdi, " << tokenList[1].value << "\n";
-            output << "    syscall\n";
+            std::string stringValue;
+            stringValue = tokenList[1].value;
+
+            textSection << "    mov eax, 4\n";
+            textSection << "    mov ebx, 1\n";
+            textSection << "    mov ecx, item" << dataId << "\n";
+            textSection << "    mov edx, item" << dataId << "_length\n";
+            textSection << "    int 0x80\n";
+
+            dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\", 0xA\n";
+            dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
+            dataId ++;
         }
     }
 
-    return output.str();
+    textSection << "    mov eax, 1\n";
+    textSection << "    mov ebx, 0\n";
+    textSection << "    int 0x80\n";
+    return textSection.str() + "\n" + dataSection.str();
 }
 
 int main(int argc, char* argv[]) {
@@ -164,18 +183,8 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    std::cout << "hi" << std::endl;
-
     std::string fileName = argv[1];
     std::vector<Line> lines = getLines(fileName);
-
-    for (int i = 0; i < lines.size(); i ++) {
-        const std::vector<Token> tokenList = lines[i].tokenList;
-        for (int j = 0; j < tokenList.size(); j ++) {
-            std::cout << tokenList[j].type << " " << tokenList[j].value << ", ";
-        }
-        std::cout << std::endl;
-    }
     
     std::string asm_string = lines_to_asm(lines);
 
