@@ -13,20 +13,27 @@
 #include <optional>
 
 enum TokenType {
-    _return,
+    _exit,
     _int_literal,
     _string_literal,
-    _semicolon,
+    _newline,
 };
 
 class Token {
     public:
         TokenType type;
         std::string value;
-    
 
     Token(TokenType type) : type(type), value("") {}
     Token(TokenType type, std::string value) : type(type), value(value) {}
+};
+
+class Line {
+    public:
+        std::vector<Token> tokenList;
+        int spaces;  // the number of spaces the line is indented with (scope)
+    
+    Line(std::vector<Token> tokenList, int spaces) : tokenList(tokenList), spaces(spaces) {}
 };
 
 std::string getFileContent(std::string fileName) {
@@ -48,11 +55,12 @@ std::string getFileContent(std::string fileName) {
     return fileContent;
 }
 
-std::vector<Token> getTokens(std::string fileName) {
-    std::vector<Token> tokenList;
+std::vector<Line> getLines(std::string fileName) {
+    std::vector<Token> tokenBuffer;
+    std::vector<Line> lines;
 
     std::string fileContent = getFileContent(fileName);
-    std::string tokenBuffer;
+    std::string stringBuffer;
     int currLine = 1;
     int i = 0;
 
@@ -62,80 +70,87 @@ std::vector<Token> getTokens(std::string fileName) {
 
         // beginning of identifier or keyword
         if (std::isalpha(c)) {
-            tokenBuffer.push_back(c);
+            stringBuffer.push_back(c);
             i ++;
             while (std::isalnum(fileContent.at(i))) {
-                tokenBuffer.push_back(fileContent.at(i));
+                stringBuffer.push_back(fileContent.at(i));
                 i ++;
             }
-            if (tokenBuffer == "return") {
-                tokenList.push_back(Token(TokenType::_return));
+            if (stringBuffer == "exit") {
+                tokenBuffer.push_back(Token(TokenType::_exit));
             } else {
-                std::cerr << "unrecognized symbol " << "\"" << tokenBuffer << "\"" << " on line " << currLine << std::endl;
+                std::cerr << "unrecognized symbol " << "\"" << stringBuffer << "\"" << " on line " << currLine << std::endl;
                 exit(EXIT_FAILURE);
             }
-            tokenBuffer.clear();
+            stringBuffer.clear();
         }
 
         // beginning of int literal
         else if (std::isdigit(c)) {
             while (std::isdigit(fileContent.at(i))) {
-                tokenBuffer.push_back(fileContent.at(i));
+                stringBuffer.push_back(fileContent.at(i));
                 i ++;
             }
-            tokenList.push_back(Token(TokenType::_int_literal, tokenBuffer));
-            tokenBuffer.clear();
+            tokenBuffer.push_back(Token(TokenType::_int_literal, stringBuffer));
+            stringBuffer.clear();
         }
 
-        else if (std::isspace(c)) {
-            // newline increments line count
-            // other whitespace ignored
-            if (c == '\n') {
-                currLine ++;
-            }
+        // loaf recognizes newline as end command
+        else if (c == '\n') {
+            tokenBuffer.push_back(Token(TokenType::_newline));
+            lines.push_back(Line(tokenBuffer, 0));
+            tokenBuffer.clear();
+            currLine ++;
+            i ++;
+        }
+
+        else if (std::isspace(c)) {  // TODO: count spaces before getting other tokens
+            // other whitespace ignored for now
             i ++;
         }
 
         // not alphanumeric or whitespace
         else {
             switch (c) {
-                case ';':
-                    tokenList.push_back(TokenType::_semicolon);
-                    break;
                 case '\"':
                     i ++;
                     while (fileContent.at(i) != '\"') {
-                        tokenBuffer.push_back(fileContent.at(i));
+                        stringBuffer.push_back(fileContent.at(i));
                         i ++;
                     }
-                    tokenList.push_back(Token(TokenType::_string_literal, tokenBuffer));
-                    tokenBuffer.clear();
+                    tokenBuffer.push_back(Token(TokenType::_string_literal, stringBuffer));
+                    stringBuffer.clear();
                     break;
                 default:
                     std::cerr << "don't recognize token " << '\"' << c << '\"' << std::endl;
                     exit(EXIT_FAILURE);
             }
             i ++;
+            std::cout << i << std::endl;
         }
     }
 
-    return tokenList;
+    if (tokenBuffer.size() != 0) {
+        lines.push_back(Line(tokenBuffer, 0));
+        tokenBuffer.clear();
+    }
+
+    return lines;
 }
 
-std::string tokens_to_asm(const std::vector<Token> tokens) {
+std::string lines_to_asm(const std::vector<Line> lines) {
     std::stringstream output;
     output << "global _start\n_start:\n";
 
-    for (int i = 0; i < tokens.size(); i ++) {
-        const Token token = tokens[i];
-
-        if (token.type == TokenType::_return) {
-            if (i + 2 >= tokens.size() || tokens[i + 2].type != TokenType::_semicolon || tokens[i + 1].type != TokenType::_int_literal) {
-                std::cerr << "invalid syntax, correct syntax: return <return value>;" << std::endl;
+    for (int lineIdx = 0; lineIdx < lines.size(); lineIdx ++) {
+        const std::vector<Token> tokenList = lines[lineIdx].tokenList;
+        if (tokenList[0].type == TokenType::_exit) {
+            if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || tokenList[1].type != TokenType::_int_literal) {
+                std::cerr << "invalid syntax, correct syntax: exit <exit value>;" << std::endl;
                 exit(EXIT_FAILURE);
             }
             output << "    mov rax, 60\n";
-            output << "    mov rdi, " << tokens[i + 1].value << "\n";
+            output << "    mov rdi, " << tokenList[1].value << "\n";
             output << "    syscall\n";
         }
     }
@@ -149,10 +164,20 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    std::cout << "hi" << std::endl;
+
     std::string fileName = argv[1];
-    std::vector<Token> tokenList = getTokens(fileName);
+    std::vector<Line> lines = getLines(fileName);
+
+    for (int i = 0; i < lines.size(); i ++) {
+        const std::vector<Token> tokenList = lines[i].tokenList;
+        for (int j = 0; j < tokenList.size(); j ++) {
+            std::cout << tokenList[j].type << " " << tokenList[j].value << ", ";
+        }
+        std::cout << std::endl;
+    }
     
-    std::string asm_string = tokens_to_asm(tokenList);
+    std::string asm_string = lines_to_asm(lines);
 
     std::string outputFileName = "out.asm";
     std::ofstream outputFile(outputFileName);
