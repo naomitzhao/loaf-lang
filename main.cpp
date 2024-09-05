@@ -1,7 +1,6 @@
 /**
  * compiles loaf code into x86_64 assembly.
- * currently only works for return <int>; instructions haha
- * uses system() to call nasm with elf64 format so you need nasm on linux
+ * currently only works for printing integer literals and string literals.
  */
 
 #include <stdlib.h>
