@@ -10,6 +10,7 @@
 #include <vector>
 #include <string>
 #include <stack>
+#include <unordered_map>
 #include <unordered_set>
 #include <optional>
 
@@ -19,6 +20,13 @@ enum TokenType {
     _newline,
     _print,
     _println,
+    _int,
+};
+
+const std::unordered_map<std::string, TokenType> stringToToken = {
+    {"print", TokenType::_print},
+    {"println", TokenType::_println},
+    {"int", TokenType::_int},
 };
 
 // token types that should increase the indentation for the next line
@@ -88,10 +96,8 @@ std::vector<Line> getLines(std::string fileName) {
                 stringBuffer.push_back(fileContent.at(i));
                 i ++;
             }
-            if (stringBuffer == "print") {
-                tokenBuffer.push_back(Token(TokenType::_print));
-            } else if (stringBuffer == "println") {
-                tokenBuffer.push_back(Token(TokenType::_println));
+            if (stringToToken.contains(stringBuffer)) {
+                tokenBuffer.push_back(Token(stringToToken.at(stringBuffer)));
             } else {
                 std::cerr << "unrecognized symbol " << "\"" << stringBuffer << "\"" << " on line " << currLine << std::endl;
                 exit(EXIT_FAILURE);
@@ -205,30 +211,33 @@ std::string lines_to_asm(const std::vector<Line> lines) {
 
         const std::vector<Token> tokenList = lines[lineIdx].tokenList;
         if (tokenList[0].type == TokenType::_print || tokenList[0].type == TokenType::_println) {
-            if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || (tokenList[1].type != TokenType::_string_literal && tokenList[1].type != TokenType::_int_literal)) {
+            if (tokenList.size() == 3) {
+                std::string stringValue;
+                stringValue = tokenList[1].value;
+
+                textSection << "    mov eax, 4\n";
+                textSection << "    mov ebx, 1\n";
+                textSection << "    mov ecx, item" << dataId << "\n";
+                textSection << "    mov edx, item" << dataId << "_length\n";
+                textSection << "    int 0x80\n";
+
+                dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\"";
+
+                if (tokenList[0].type == TokenType::_println) {
+                    dataSection << ", 0xA";
+                }
+
+                dataSection << "\n";
+
+                dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
+                dataId ++;
+            } 
+            
+            // print expression
+            else {
                 std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
                 foundError = true;
             }
-            std::string stringValue;
-            stringValue = tokenList[1].value;
-
-            textSection << "    mov eax, 4\n";
-            textSection << "    mov ebx, 1\n";
-            textSection << "    mov ecx, item" << dataId << "\n";
-            textSection << "    mov edx, item" << dataId << "_length\n";
-            textSection << "    int 0x80\n";
-
-            dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\"";
-
-            if (tokenList[0].type == TokenType::_println) {
-                dataSection << ", 0xA";
-            }
-
-            dataSection << "\n";
-
-            dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
-            dataId ++;
-
         }
     }
 
