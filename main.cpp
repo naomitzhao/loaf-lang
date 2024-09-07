@@ -16,6 +16,7 @@ enum TokenType {
     _string_literal,
     _newline,
     _print,
+    _println,
 };
 
 class Token {
@@ -82,6 +83,8 @@ std::vector<Line> getLines(std::string fileName) {
             }
             if (stringBuffer == "print") {
                 tokenBuffer.push_back(Token(TokenType::_print));
+            } else if (stringBuffer == "println") {
+                tokenBuffer.push_back(Token(TokenType::_println));
             } else {
                 std::cerr << "unrecognized symbol " << "\"" << stringBuffer << "\"" << " on line " << currLine << std::endl;
                 exit(EXIT_FAILURE);
@@ -158,7 +161,7 @@ std::string lines_to_asm(const std::vector<Line> lines) {
 
     for (unsigned int lineIdx = 0; lineIdx < lines.size(); lineIdx ++) {
         const std::vector<Token> tokenList = lines[lineIdx].tokenList;
-        if (tokenList[0].type == TokenType::_print) {
+        if (tokenList[0].type == TokenType::_print || tokenList[0].type == TokenType::_println) {
             if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || (tokenList[1].type != TokenType::_string_literal && tokenList[1].type != TokenType::_int_literal)) {
                 std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
                 exit(EXIT_FAILURE);
@@ -172,11 +175,18 @@ std::string lines_to_asm(const std::vector<Line> lines) {
             textSection << "    mov edx, item" << dataId << "_length\n";
             textSection << "    int 0x80\n";
 
-            dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\", 0xA\n";
+            dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\"";
+
+            if (tokenList[0].type == TokenType::_println) {
+                dataSection << ", 0xA";
+            }
+
+            dataSection << "\n";
+
             dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
             dataId ++;
 
-            if (lineIdx < lines.size() - 1 && lines[lineIdx + 1].spaces != lines[lineIdx].spaces) {
+            if (lineIdx < lines.size() - 1 && lines[lineIdx + 1].spaces > lines[lineIdx].spaces) {
                 std::cerr << "invalid syntax on line " << lines[lineIdx + 1].row << ". unexpected indentation" << std::endl;
                 exit(EXIT_FAILURE);
             }

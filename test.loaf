@@ -1,5 +1,5 @@
 print "hello world"
 
-    print 2
+println 2
 
-print 12
+println 12
