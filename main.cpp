@@ -9,6 +9,8 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <stack>
+#include <unordered_set>
 #include <optional>
 
 enum TokenType {
@@ -17,6 +19,11 @@ enum TokenType {
     _newline,
     _print,
     _println,
+};
+
+// token types that should increase the indentation for the next line
+const std::unordered_set<TokenType> indentationIncreasers = {
+      
 };
 
 class Token {
@@ -152,19 +159,55 @@ std::vector<Line> getLines(std::string fileName) {
     return lines;
 }
 
+// check if the current line has the correct indentation by comparing to the last line
+bool has_correct_indentation(const std::vector<Line> lines, const int lineIdx, const int lastIndentation) {
+    if (lineIdx > 0) {
+        const int currSpaces = lines[lineIdx].spaces;
+        if (indentationIncreasers.contains(lines[lineIdx].tokenList[0].type)) {
+            if (lines[lineIdx].spaces <= lastIndentation) {
+                std::cerr << "invalid syntax on line " << lines[lineIdx].row << ". indentation expected" << std::endl;
+                return false;
+            }
+        } else if (currSpaces > lastIndentation) {
+            std::cerr << "invalid syntax on line " << lines[lineIdx].row << ". unexpected indentation" << std::endl;
+        } 
+    } else if (lines[lineIdx].spaces != 0) {
+        std::cerr << "invalid syntax on line " << lines[lineIdx].row << ". unexpected indentation" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 std::string lines_to_asm(const std::vector<Line> lines) {
+    bool foundError = false;
     int dataId = 0;
     std::stringstream textSection;
     std::stringstream dataSection;
+
+    std::stack<int> indentations;  // indentations we are within
+    indentations.push(0);  // program starts with 0 indentation
+
     textSection << "global _start\n\nsection .text\n\n_start:\n";
     dataSection << "section .data\n";
 
     for (unsigned int lineIdx = 0; lineIdx < lines.size(); lineIdx ++) {
+        // check for correct indentation
+        if (!has_correct_indentation(lines, lineIdx, indentations.top())) {
+            foundError = true;
+        }
+
+        if (lines[lineIdx].spaces > indentations.top()) {
+            indentations.push(lines[lineIdx].spaces);
+        }
+        while (lines[lineIdx].spaces < indentations.top()) {
+            indentations.pop();
+        }
+
         const std::vector<Token> tokenList = lines[lineIdx].tokenList;
         if (tokenList[0].type == TokenType::_print || tokenList[0].type == TokenType::_println) {
             if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || (tokenList[1].type != TokenType::_string_literal && tokenList[1].type != TokenType::_int_literal)) {
                 std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
-                exit(EXIT_FAILURE);
+                foundError = true;
             }
             std::string stringValue;
             stringValue = tokenList[1].value;
@@ -186,11 +229,11 @@ std::string lines_to_asm(const std::vector<Line> lines) {
             dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
             dataId ++;
 
-            if (lineIdx < lines.size() - 1 && lines[lineIdx + 1].spaces > lines[lineIdx].spaces) {
-                std::cerr << "invalid syntax on line " << lines[lineIdx + 1].row << ". unexpected indentation" << std::endl;
-                exit(EXIT_FAILURE);
-            }
         }
+    }
+
+    if (foundError) {
+        exit(EXIT_FAILURE);
     }
 
     textSection << "    mov eax, 1\n";
