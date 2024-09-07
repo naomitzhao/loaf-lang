@@ -31,8 +31,9 @@ class Line {
     public:
         std::vector<Token> tokenList;
         int spaces;  // the number of spaces the line is indented with (scope)
+        int row;  // the row number of the line in the plaintext of the file
     
-    Line(std::vector<Token> tokenList, int spaces) : tokenList(tokenList), spaces(spaces) {}
+    Line(std::vector<Token> tokenList, int spaces, int row) : tokenList(tokenList), spaces(spaces), row(row) {}
 };
 
 std::string getFileContent(std::string fileName) {
@@ -65,6 +66,7 @@ std::vector<Line> getLines(std::string fileName) {
     std::string stringBuffer;
     int currLine = 1;
     unsigned int i = 0;
+    int spaces = 0;
 
     // iterate over all characters in file content
     while (i < fileContent.length()) {
@@ -99,15 +101,20 @@ std::vector<Line> getLines(std::string fileName) {
 
         // loaf recognizes newline as end command
         else if (c == '\n') {
-            tokenBuffer.push_back(Token(TokenType::_newline));
-            lines.push_back(Line(tokenBuffer, 0));
+            if (tokenBuffer.size() != 0) {
+                tokenBuffer.push_back(Token(TokenType::_newline));
+                lines.push_back(Line(tokenBuffer, spaces, currLine));
+            }
+            spaces = 0;
             tokenBuffer.clear();
             currLine ++;
             i ++;
         }
 
         else if (std::isspace(c)) {  // TODO: count spaces before getting other tokens
-            // other whitespace ignored for now
+            if (tokenBuffer.size() == 0) {
+                spaces ++;
+            }
             i ++;
         }
 
@@ -132,7 +139,10 @@ std::vector<Line> getLines(std::string fileName) {
     }
 
     if (tokenBuffer.size() != 0) {
-        lines.push_back(Line(tokenBuffer, 0));
+        if (tokenBuffer.size() != 0) {
+            lines.push_back(Line(tokenBuffer, spaces, currLine));
+        }
+        spaces = 0;
         tokenBuffer.clear();
     }
 
@@ -152,7 +162,7 @@ std::string lines_to_asm(const std::vector<Line> lines) {
         const std::vector<Token> tokenList = lines[lineIdx].tokenList;
         if (tokenList[0].type == TokenType::_print) {
             if (tokenList.size() != 3 || tokenList[2].type != TokenType::_newline || (tokenList[1].type != TokenType::_string_literal && tokenList[1].type != TokenType::_int_literal)) {
-                std::cerr << "invalid syntax on line" << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
+                std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
                 exit(EXIT_FAILURE);
             }
             std::string stringValue;
@@ -167,6 +177,11 @@ std::string lines_to_asm(const std::vector<Line> lines) {
             dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\", 0xA\n";
             dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
             dataId ++;
+
+            if (lineIdx < lines.size() - 1 && lines[lineIdx + 1].spaces != lines[lineIdx].spaces) {
+                std::cerr << "invalid syntax on line " << lines[lineIdx + 1].row << ". unexpected indentation" << std::endl;
+                exit(EXIT_FAILURE);
+            }
         }
     }
 
