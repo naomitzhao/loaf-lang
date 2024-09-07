@@ -111,7 +111,7 @@ std::vector<Line> getLines(std::string fileName) {
             i ++;
         }
 
-        else if (std::isspace(c)) {  // TODO: count spaces before getting other tokens
+        else if (std::isspace(c)) { 
             if (tokenBuffer.size() == 0) {
                 spaces ++;
             }
@@ -148,8 +148,6 @@ std::vector<Line> getLines(std::string fileName) {
 
     return lines;
 }
-
-// TODO: add line count to line objects so errors display accurately
 
 std::string lines_to_asm(const std::vector<Line> lines) {
     int dataId = 0;
