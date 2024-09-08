@@ -1,5 +1,2 @@
-print "hello world"
-
-println 2    
-
-println 12
+int hi = 2
+int hello = 20

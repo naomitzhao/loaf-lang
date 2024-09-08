@@ -18,9 +18,12 @@ enum TokenType {
     _int_literal,
     _string_literal,
     _newline,
+    _equal,
+    _equalequal,
     _print,
     _println,
     _int,
+    _symbol,
 };
 
 const std::unordered_map<std::string, TokenType> stringToToken = {
@@ -50,6 +53,22 @@ class Line {
         int row;  // the row number of the line in the plaintext of the file
     
     Line(std::vector<Token> tokenList, int spaces, int row) : tokenList(tokenList), spaces(spaces), row(row) {}
+};
+
+enum DataType {
+    _int_type,
+    _string_type,
+    _null_type,
+};
+
+class Symbol {
+    public:
+        DataType type;
+        std::string name;
+        std::string value;
+    
+    Symbol(DataType type, std::string name, std::string value) : type(type), name(name), value(value) {}
+    Symbol(DataType type, std::string name) : type(type), name(name), value("") {}
 };
 
 std::string getFileContent(std::string fileName) {
@@ -99,8 +118,7 @@ std::vector<Line> getLines(std::string fileName) {
             if (stringToToken.contains(stringBuffer)) {
                 tokenBuffer.push_back(Token(stringToToken.at(stringBuffer)));
             } else {
-                std::cerr << "unrecognized symbol " << "\"" << stringBuffer << "\"" << " on line " << currLine << std::endl;
-                exit(EXIT_FAILURE);
+                tokenBuffer.push_back(Token(TokenType::_symbol, stringBuffer));
             }
             stringBuffer.clear();
         }
@@ -145,6 +163,15 @@ std::vector<Line> getLines(std::string fileName) {
                     }
                     tokenBuffer.push_back(Token(TokenType::_string_literal, stringBuffer));
                     stringBuffer.clear();
+                    break;
+                case '=':
+                    i ++;
+                    if (fileContent.at(i) == '=') {
+                        tokenBuffer.push_back(Token(TokenType::_equalequal));
+                        i ++;
+                    } else {
+                        tokenBuffer.push_back(Token(TokenType::_equal));
+                    }
                     break;
                 default:
                     std::cerr << "don't recognize token " << '\"' << c << '\"' << std::endl;
@@ -192,6 +219,21 @@ std::string lines_to_asm(const std::vector<Line> lines) {
 
     std::stack<int> indentations;  // indentations we are within
     indentations.push(0);  // program starts with 0 indentation
+    
+    std::unordered_map<std::string, Symbol> symbols;  // key: symbol name, value: symbol
+    std::unordered_map<std::string, std::string> registers = {  // key: register name, value: symbol name
+        {"eax", ""}, 
+        {"ebx", ""}, 
+        {"ecx", ""}, 
+        {"edx", ""}, 
+        {"esi", ""}, 
+        {"edi", ""}, 
+    };  
+
+    std::stack<std::string> availableRegisters;
+    for (std::unordered_map<std::string, std::string>::iterator iter = registers.begin(); iter != registers.end(); iter ++) {
+        availableRegisters.push(iter->first);
+    }
 
     textSection << "global _start\n\nsection .text\n\n_start:\n";
     dataSection << "section .data\n";
@@ -210,34 +252,63 @@ std::string lines_to_asm(const std::vector<Line> lines) {
         }
 
         const std::vector<Token> tokenList = lines[lineIdx].tokenList;
+
+        // print or println
         if (tokenList[0].type == TokenType::_print || tokenList[0].type == TokenType::_println) {
-            if (tokenList.size() == 3) {
-                std::string stringValue;
-                stringValue = tokenList[1].value;
-
-                textSection << "    mov eax, 4\n";
-                textSection << "    mov ebx, 1\n";
-                textSection << "    mov ecx, item" << dataId << "\n";
-                textSection << "    mov edx, item" << dataId << "_length\n";
-                textSection << "    int 0x80\n";
-
-                dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\"";
-
-                if (tokenList[0].type == TokenType::_println) {
-                    dataSection << ", 0xA";
-                }
-
-                dataSection << "\n";
-
-                dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
-                dataId ++;
-            } 
-            
-            // print expression
-            else {
+            if (tokenList.size() != 3) {
                 std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: print <integer literal or string literal>" << std::endl;
                 foundError = true;
             }
+
+            std::string stringValue;
+            stringValue = tokenList[1].value;
+
+            textSection << "    mov eax, 4\n";
+            textSection << "    mov ebx, 1\n";
+            textSection << "    mov ecx, item" << dataId << "\n";
+            textSection << "    mov edx, item" << dataId << "_length\n";
+            textSection << "    int 0x80\n";
+
+            dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\"";
+
+            if (tokenList[0].type == TokenType::_println) {
+                dataSection << ", 0xA";
+            }
+
+            dataSection << "\n";
+
+            dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
+            dataId ++;
+        }
+
+        // declaration of integer variable
+        else if (tokenList[0].type == TokenType::_int) {
+            Token symbolToken = tokenList[1];
+
+            if (tokenList.size() != 5 || tokenList[1].type != TokenType::_symbol || tokenList[2].type != TokenType::_equal || tokenList[3].type != TokenType::_int_literal) {
+                std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: int <variable_name> = <int literal>" << std::endl;
+                foundError = true;
+                continue;
+            }
+
+            if (symbols.contains(symbolToken.value)) {
+                std::cerr << "error on line " << lineIdx << ": symbol " << symbolToken.value << " already declared previously" << std::endl;
+                foundError = true;
+                continue;
+            }
+
+            if (availableRegisters.empty()) {
+                std::cerr << "error on line " << lineIdx << ": not enough registers. current max number of variables is 6" << std::endl;
+                foundError = true;
+                continue;
+            }
+
+            std::string chosenRegister = availableRegisters.top();
+            availableRegisters.pop();
+
+            symbols.insert({symbolToken.value, Symbol(DataType::_int_type, symbolToken.value, tokenList[3].value)});
+            registers.insert({chosenRegister, symbolToken.value});
+            textSection << "    mov " << chosenRegister << ", " << tokenList[3].value << "\n";
         }
     }
 
@@ -259,6 +330,13 @@ int main(int argc, char* argv[]) {
 
     std::string fileName = argv[1];
     std::vector<Line> lines = getLines(fileName);
+
+    // for (Line line : lines) {
+    //     for (Token token : line.tokenList) {
+    //         std::cout << "(" << token.type << ", " << token.value << ") ";
+    //     }
+    //     std::cout << std::endl;
+    // }
     
     std::string asm_string = lines_to_asm(lines);
 
