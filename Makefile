@@ -1,4 +1,4 @@
 loaf: main.cpp
 	g++ -std=c++20 -Wall -o loaf main.cpp
 clean:
-	rm -f loaf *.asm *.o
+	rm -f loaf *.s *.o

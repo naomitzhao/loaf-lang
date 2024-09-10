@@ -235,8 +235,8 @@ std::string lines_to_asm(const std::vector<Line> lines) {
         availableRegisters.push(iter->first);
     }
 
-    textSection << "global _start\n\nsection .text\n\n_start:\n";
-    dataSection << "section .data\n";
+    textSection << ".global _start\n\n.text\n_start:\n";
+    dataSection << ".data\n";
 
     for (unsigned int lineIdx = 0; lineIdx < lines.size(); lineIdx ++) {
         // check for correct indentation
@@ -263,52 +263,23 @@ std::string lines_to_asm(const std::vector<Line> lines) {
             std::string stringValue;
             stringValue = tokenList[1].value;
 
-            textSection << "    mov eax, 4\n";
-            textSection << "    mov ebx, 1\n";
-            textSection << "    mov ecx, item" << dataId << "\n";
-            textSection << "    mov edx, item" << dataId << "_length\n";
-            textSection << "    int 0x80\n";
+            // printing uses eax, ebx, ecx, and edx.
+            textSection << "    movl $4, %eax\n";
+            textSection << "    movl $1, %ebx\n";
+            textSection << "    movl $item" << dataId << ", %ecx\n";
+            textSection << "    mov $item" << dataId << "_length, %edx\n";
+            textSection << "    int $0x80\n";
 
-            dataSection << "    item" << dataId << ": db \"" << tokenList[1].value << "\"";
+            dataSection << "item" << dataId << ":\n    .ascii \"" << tokenList[1].value;
 
             if (tokenList[0].type == TokenType::_println) {
-                dataSection << ", 0xA";
+                dataSection << "\\n";
             }
 
-            dataSection << "\n";
+            dataSection << "\"\n";
 
-            dataSection << "    item" << dataId << "_length equ $-item" << dataId << "\n";
+            dataSection << "    item" << dataId << "_length = . - item" << dataId << "\n";
             dataId ++;
-        }
-
-        // declaration of integer variable
-        else if (tokenList[0].type == TokenType::_int) {
-            Token symbolToken = tokenList[1];
-
-            if (tokenList.size() != 5 || tokenList[1].type != TokenType::_symbol || tokenList[2].type != TokenType::_equal || tokenList[3].type != TokenType::_int_literal) {
-                std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: int <variable_name> = <int literal>" << std::endl;
-                foundError = true;
-                continue;
-            }
-
-            if (symbols.contains(symbolToken.value)) {
-                std::cerr << "error on line " << lineIdx << ": symbol " << symbolToken.value << " already declared previously" << std::endl;
-                foundError = true;
-                continue;
-            }
-
-            if (availableRegisters.empty()) {
-                std::cerr << "error on line " << lineIdx << ": not enough registers. current max number of variables is 6" << std::endl;
-                foundError = true;
-                continue;
-            }
-
-            std::string chosenRegister = availableRegisters.top();
-            availableRegisters.pop();
-
-            symbols.insert({symbolToken.value, Symbol(DataType::_int_type, symbolToken.value, tokenList[3].value)});
-            registers.insert({chosenRegister, symbolToken.value});
-            textSection << "    mov " << chosenRegister << ", " << tokenList[3].value << "\n";
         }
     }
 
@@ -316,9 +287,9 @@ std::string lines_to_asm(const std::vector<Line> lines) {
         exit(EXIT_FAILURE);
     }
 
-    textSection << "    mov eax, 1\n";
-    textSection << "    mov ebx, 0\n";
-    textSection << "    int 0x80\n";
+    textSection << "    movl $1, %eax\n";
+    textSection << "    movl $1, %ebx\n";
+    textSection << "    int $0x80\n";
     return textSection.str() + "\n" + dataSection.str();
 }
 
@@ -340,15 +311,15 @@ int main(int argc, char* argv[]) {
     
     std::string asm_string = lines_to_asm(lines);
 
-    std::string outputFileName = "out.asm";
+    std::string outputFileName = "out.s";
     std::ofstream outputFile(outputFileName);
 
     outputFile << asm_string;
 
     outputFile.close();
 
-    system("nasm -felf64 out.asm");
-    system("ld -o out out.o");
+    system("as --gstabs --32 -o out.o out.s");
+    system("ld -melf_i386 -o out out.o");
 
     return EXIT_SUCCESS;
 }
