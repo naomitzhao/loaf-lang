@@ -23,6 +23,7 @@ enum TokenType {
     _print,
     _println,
     _int,
+    _str,
     _symbol,
 };
 
@@ -30,6 +31,7 @@ const std::unordered_map<std::string, TokenType> stringToToken = {
     {"print", TokenType::_print},
     {"println", TokenType::_println},
     {"int", TokenType::_int},
+    {"str", TokenType::_str},
 };
 
 // token types that should increase the indentation for the next line
@@ -260,26 +262,50 @@ std::string lines_to_asm(const std::vector<Line> lines) {
                 foundError = true;
             }
 
-            std::string stringValue;
-            stringValue = tokenList[1].value;
-
-            // printing uses eax, ebx, ecx, and edx.
             textSection << "    movl $4, %eax\n";
             textSection << "    movl $1, %ebx\n";
-            textSection << "    movl $item" << dataId << ", %ecx\n";
-            textSection << "    mov $item" << dataId << "_length, %edx\n";
-            textSection << "    int $0x80\n";
+            std::string address = tokenList[1].value;
 
-            dataSection << "item" << dataId << ":\n    .ascii \"" << tokenList[1].value;
+            if (tokenList[1].type == TokenType::_string_literal || tokenList[1].type == TokenType::_int_literal) {
+                address = "const" + std::to_string(dataId);
+                dataSection << "const" << dataId << ":\n    .ascii \"" << tokenList[1].value;
 
-            if (tokenList[0].type == TokenType::_println) {
-                dataSection << "\\n";
+                if (tokenList[0].type == TokenType::_println) {
+                    dataSection << "\\n";
+                }
+
+                dataSection << "\"\n";
+
+                dataSection << "    " << address << "_len = . - " << address << "\n";
+                dataId ++;
             }
 
-            dataSection << "\"\n";
+            textSection << "    movl $" << address << ", %ecx\n";
+            textSection << "    mov $" << address << "_len, %edx\n";
+            textSection << "    int $0x80\n";
+        }
 
-            dataSection << "    item" << dataId << "_length = . - item" << dataId << "\n";
-            dataId ++;
+        else if (tokenList[0].type == TokenType::_int) {
+            if (tokenList.size() != 5 || tokenList[1].type != TokenType::_symbol || tokenList[2].type != TokenType::_equal || tokenList[3].type != TokenType::_int_literal) {
+                std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: int <variable name> = <int literal>" << std::endl;
+                foundError = true;
+            }
+
+            std::string symbolName = "symbol" + tokenList[1].value;
+            std::string literalValue = tokenList[3].value;
+            dataSection << symbolName << ":\n    .long " << literalValue << "\n";
+        }
+
+        else if (tokenList[0].type == TokenType::_str) {
+            if (tokenList.size() != 5 || tokenList[1].type != TokenType::_symbol || tokenList[2].type != TokenType::_equal || tokenList[3].type != TokenType::_string_literal) {
+                std::cerr << "invalid syntax on line " << lineIdx << ". correct syntax: int <variable name> = <string literal>" << std::endl;
+                foundError = true;
+            }
+
+            std::string symbolName = tokenList[1].value;
+            std::string literalValue = tokenList[3].value;
+            dataSection << symbolName << ":\n    .ascii \"" << literalValue << "\"\n";
+            dataSection << "    " << symbolName << "_len = . - " << symbolName << "\n";
         }
     }
 
@@ -302,12 +328,12 @@ int main(int argc, char* argv[]) {
     std::string fileName = argv[1];
     std::vector<Line> lines = getLines(fileName);
 
-    // for (Line line : lines) {
-    //     for (Token token : line.tokenList) {
-    //         std::cout << "(" << token.type << ", " << token.value << ") ";
-    //     }
-    //     std::cout << std::endl;
-    // }
+    for (Line line : lines) {
+        for (Token token : line.tokenList) {
+            std::cout << "(" << token.type << ", " << token.value << ") ";
+        }
+        std::cout << std::endl;
+    }
     
     std::string asm_string = lines_to_asm(lines);
 

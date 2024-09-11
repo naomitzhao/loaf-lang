@@ -1,1 +1,3 @@
-print "hello world"
+str varthing = "meow"
+println "hi"
+println varthing
