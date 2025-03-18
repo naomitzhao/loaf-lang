@@ -1,4 +1,7 @@
 # loaf-lang
+
+(Super old project I plan to restart! This was mainly me just messing around...)
+
 Compiler for the Loaf programming language which compiles Loaf code into x86 assembly. 
 
 Taking inspiration from [Pixeled](https://www.youtube.com/@pixeled-yt/videos)'s [Creating a Compiler](https://www.youtube.com/playlist?list=PLUDlas_Zy_qC7c5tCgTMYq2idyyT241qs), Robert Nystrom's [Crafting Interpreters](https://craftinginterpreters.com/), and.. just doing things by the knowledge I have from ECS50 (assembler course)
